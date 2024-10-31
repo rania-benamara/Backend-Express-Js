@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const db = require("../mysql/db");
+const db = require("../../mysql/db");
 const bcrypt = require("bcrypt");
 const jwt = require('jsonwebtoken');
 const secretKey = "cle"; 
@@ -25,13 +25,53 @@ const authenticateJWT = (req, res, next) => {
       res.status(401).json({ message: "Unauthorized" });
     }
   };
+  /***********************************register************************************/
+  //verifier si un compte existe deja 
+  router.post("/register", (req, res) => {
+    const { nom, prenom, telephone, email, password, date_naissance } = req.body;
   
+    // Vérification des champs obligatoires
+    if (!nom || !prenom || !email || !password|| !date_naissance) {
+        return res.status(400).json({ message: "Veuillez remplir tous les champs!" });
+    }
+
+    // Vérifier si l'email existe déjà dans la base de données
+    const checkEmail = "SELECT * FROM uzr4ephf_arsam_user WHERE email = ?";
+    db.query(checkEmail, [email], (err, results) => {
+        if (err) {
+            console.error("Database error:", err);
+            return res.status(500).json({ message: "Error checking email" });
+        }
+
+        // Si l'email existe déjà
+        if (results.length > 0) {
+            return res.status(400).json({ message: "L'email existe déjà, veuillez vous connecter." });
+        }
+
+        // Hashage du mot de passe
+        bcrypt.hash(password, 10, (err, hashedPassword) => {
+            if (err) return res.status(500).json({ message: "Error hashing password" });
+
+            const sql = "INSERT INTO uzr4ephf_arsam_user (nom, prenom, telephone, email, password, date_naissance) VALUES (?, ?, ?, ?, ?, ?)";
+            db.query(sql, [nom, prenom, telephone, email, hashedPassword, date_naissance], (err, result) => {
+                if (err) {
+                    console.error("Database error:", err);
+                    return res.status(500).json({ message: "Error registering user" });
+                }
+                res.status(201).json({
+                    message: "Utilisateur enregistré avec succès",
+                    userId: result.insertId,
+                });
+            });
+        });
+    });
+});
   /****************************Fonction login*******************************/
   router.post("/login", (req, res) => {
     const { email, password } = req.body;
   
     if (!email || !password) {
-      return res.status(400).json({ message: "Missing email or password" });
+      return res.status(400).json({ message: "Veuillez remplir les deux champs " });
     }
   
     const sql = "SELECT * FROM uzr4ephf_arsam_user WHERE email = ?";
@@ -55,44 +95,16 @@ const authenticateJWT = (req, res, next) => {
         }
   
         if (!isMatch) {
-          return res.status(401).json({ message: "Invalid credentials" });
+          return res.status(401).json({ message: "Email ou mot de passe invalide" });
         }
   
         // Générer un token JWT
-        const token = jwt.sign({ userId: user.arsam_user_id, email: user.email }, secretKey, { expiresIn: "1h" });
+        const token = jwt.sign({ userId: user.arsam_user_id, email: user.email }, secretKey/*, { expiresIn: "1h" }*/);
   
         res.status(200).json({ message: "Login successful", token });
       });
     });
   });
-  
-  /***********************************register************************************/
-  router.post("/register", (req, res) => {
-    const { nom, prenom, telephone, email, password, date_naissance } = req.body || {};
-  
-    // Vérification des champs obligatoires
-    if (!nom || !prenom || !email || !password) {
-      return res.status(400).json({ message: "Missing required fields" });
-    }
-  
-    // Hashage du mot de passe
-    bcrypt.hash(password, 10, (err, hashedPassword) => {
-      if (err) return res.status(500).json({ message: "Error hashing password" });
-  
-      const sql = "INSERT INTO uzr4ephf_arsam_user (nom, prenom, telephone, email, password, date_naissance) VALUES (?, ?, ?, ?, ?, ?)";
-      db.query(sql, [nom, prenom, telephone, email, hashedPassword, date_naissance], (err, result) => {
-        if (err) {
-          console.error("Database error:", err);
-          return res.status(500).json({ message: "Error registering user" });
-        }
-        res.status(201).json({
-          message: "User registered successfully",
-          userId: result.insertId,
-        });
-      });
-    });
-  });
-  
   /*************************changer mot de passe ******************/
   router.put('/change-password', authenticateJWT, (req, res) => {
     const { newPassword, confirmPassword } = req.body;
@@ -100,12 +112,12 @@ const authenticateJWT = (req, res, next) => {
   
     // Vérification des champs obligatoires
     if (!newPassword || !confirmPassword) {
-      return res.status(400).json({ message: "Missing required fields" });
+      return res.status(400).json({ message: "veuillez remplir tous les champs" });
     }
   
     // Vérification que les nouveaux mots de passe correspondent
     if (newPassword !== confirmPassword) {
-      return res.status(400).json({ message: "Passwords do not match" });
+      return res.status(400).json({ message: "les mots de passe sont differents" });
     }
   
     // Hasher le nouveau mot de passe
@@ -117,14 +129,13 @@ const authenticateJWT = (req, res, next) => {
       db.query(sqlUpdate, [newHashedPassword, userId], (err, result) => {
         if (err) {
           console.error("Database error:", err);
-          return res.status(500).json({ message: "Error updating password" });
+          return res.status(500).json({ message: "Erreur" });
         }
         if (result.affectedRows > 0) {
-          res.status(200).json({ message: "Password updated successfully" });
-        } else {
-          res.status(404).json({ message: "User not found" });
+          res.status(200).json({ message: "Mot de passe changer" });
         }
       });
     });
   });
   
+  module.exports = router;
