@@ -5,7 +5,7 @@ const bcrypt = require("bcrypt");
 const jwt = require('jsonwebtoken');
 const secretKey = "cle"; 
 
-// Middleware pour vérifier le JWT
+// Middleware pour vérifier le JWTe
 const authenticateJWT = (req, res, next) => {
     const authHeader = req.header("Authorization");
     if (authHeader) {
