@@ -66,6 +66,7 @@ const authenticateJWT = (req, res, next) => {
         });
     });
 });
+
   /****************************Fonction login*******************************/
   router.post("/login", (req, res) => {
     const { email, password } = req.body;
@@ -105,6 +106,7 @@ const authenticateJWT = (req, res, next) => {
       });
     });
   });
+
   /*************************changer mot de passe ******************/
   router.put('/change-password', authenticateJWT, (req, res) => {
     const { newPassword, confirmPassword } = req.body;
@@ -137,5 +139,92 @@ const authenticateJWT = (req, res, next) => {
       });
     });
   });
-  
+
+  /*******************************Ajouter adresse*********************************** */
+  router.post("/add-address", authenticateJWT, (req, res) => {
+    const { numero_appartement, rue, ville, province, code_postal } = req.body;
+    const userId = req.user.userId;
+    const postal = /^[A-Za-z]\d[A-Za-z] \d[A-Za-z]\d$/; // format A1A 1A1
+    if (!numero_appartement || !rue || !ville || !province || !code_postal) {
+        return res.status(400).json({ message: "Veuillez remplir tous les champs!" });
+    }
+
+    if (!postal.test(code_postal)) {
+        return res.status(400).json({ message: "Le code postal doit être au format A1A 1A1" });
+    }
+    const sql = "INSERT INTO uzr4ephf_arsam_user_adress (numero_appartement, rue, ville, province, code_postal, arsam_user_id) VALUES (?, ?, ?, ?, ?, ?)";
+    db.query(sql, [numero_appartement, rue, ville, province, code_postal, userId], (err, result) => {
+        if (err) {
+            console.error("Database error:", err);
+            return res.status(500).json({ message: "Erreur lors de l'ajout de l'adresse" });
+        }
+        res.status(201).json({ message: "Adresse ajoutée avec succès"});
+    });
+});
+
+/*********************************Modifier adresse ********************************** */
+router.put("/update-address/:id", authenticateJWT, (req, res) => {
+    const { numero_appartement, rue, ville, province, code_postal } = req.body;
+    const addressId = req.params.id;
+    const postal = /^[A-Za-z]\d[A-Za-z] \d[A-Za-z]\d$/; 
+    // Vérification des champs obligatoires
+    if (!numero_appartement || !rue || !ville || !province || !code_postal) {
+        return res.status(400).json({ message: "Veuillez remplir tous les champs!" });
+    }
+    if (!postal.test(code_postal)) {
+        return res.status(400).json({ message: "Le code postal doit être au format A1A 1A1" });
+    }
+
+    // Mettre à jour l'adresse dans la base de données
+    const sqlUpdate = "UPDATE uzr4ephf_arsam_user_adress SET numero_appartement = ?, rue = ?, ville = ?, province = ?, code_postal = ? WHERE id = ?";
+    db.query(sqlUpdate, [numero_appartement, rue, ville, province, code_postal, addressId], (err, result) => {
+        if (err) {
+            console.error("Database error:", err);
+            return res.status(500).json({ message: "Error updating address" });
+        }
+        if (result.affectedRows > 0) {
+            res.status(200).json({ message: "Adresse mise à jour avec succès" });
+        }
+    });
+});
+
+/************************************Supprimer adresse****************************** */
+router.delete("/delete-address/:id", authenticateJWT, (req, res) => {
+    const addressId = req.params.id;
+    const sql = "DELETE FROM uzr4ephf_arsam_user_adress WHERE id = ?";
+    db.query(sql, [addressId], (err, result) => {
+        if (err) {
+            console.error("Database error:", err);
+            return res.status(500).json({ message: "Erreur lors de la suppression de l'adresse" });
+        }
+        if (result.affectedRows > 0) {
+            res.status(200).json({ message: "Adresse supprimée avec succès" });
+        } else {
+            res.status(404).json({ message: "Adresse non trouvée" });
+        }
+    });
+});
+
+/****************************************supprimer utilisateur********************************** */
+// Route pour supprimer un compte utilisateur
+router.delete("/delete-user", authenticateJWT, (req, res) => {
+    const userId = req.user.userId;  // ID de l'utilisateur récupéré du token
+
+    const sqlDeleteUser = "DELETE FROM uzr4ephf_arsam_user WHERE arsam_user_id = ?";
+
+    // Supprimer l'utilisateur (les adresses seront supprimées automatiquement grâce à la contrainte ON DELETE CASCADE)
+    db.query(sqlDeleteUser, [userId], (err, result) => {
+        if (err) {
+            console.error("Database error:", err);
+            return res.status(500).json({ message: "Erreur lors de la suppression de l'utilisateur." });
+        }
+
+        if (result.affectedRows > 0) {
+            res.status(200).json({ message: "Compte supprimé avec succès." });
+        } else {
+            res.status(404).json({ message: "Utilisateur non trouvé." });
+        }
+    });
+});
+
   module.exports = router;
