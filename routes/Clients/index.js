@@ -5,7 +5,7 @@ const bcrypt = require("bcrypt");
 const jwt = require('jsonwebtoken');
 const secretKey = "cle"; 
 
-// Middleware pour vérifier le JWT
+// Middleware pour vérifier le JWTe
 const authenticateJWT = (req, res, next) => {
     const authHeader = req.header("Authorization");
     if (authHeader) {
@@ -28,10 +28,10 @@ const authenticateJWT = (req, res, next) => {
   /***********************************register************************************/
   //verifier si un compte existe deja 
   router.post("/register", (req, res) => {
-    const { nom, prenom, telephone, email, password, date_naissance } = req.body;
+    const {prenom, nom, email, telephone, password ,date_naissance} = req.body;
   
     // Vérification des champs obligatoires
-    if (!nom || !prenom || !email || !password|| !date_naissance) {
+    if ( !prenom || !nom || !email || !telephone|| !password|| !date_naissance) {
         return res.status(400).json({ message: "Veuillez remplir tous les champs!" });
     }
 
@@ -52,8 +52,8 @@ const authenticateJWT = (req, res, next) => {
         bcrypt.hash(password, 10, (err, hashedPassword) => {
             if (err) return res.status(500).json({ message: "Error hashing password" });
 
-            const sql = "INSERT INTO uzr4ephf_arsam_user (nom, prenom, telephone, email, password, date_naissance) VALUES (?, ?, ?, ?, ?, ?)";
-            db.query(sql, [nom, prenom, telephone, email, hashedPassword, date_naissance], (err, result) => {
+            const sql = "INSERT INTO uzr4ephf_arsam_user (prenom, nom, email, telephone, password ,date_naissance) VALUES (?, ?, ?, ?, ?, ?)";
+            db.query(sql, [prenom, nom, email, telephone, hashedPassword ,date_naissance], (err, result) => {
                 if (err) {
                     console.error("Database error:", err);
                     return res.status(500).json({ message: "Error registering user" });
