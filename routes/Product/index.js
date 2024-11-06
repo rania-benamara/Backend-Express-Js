@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const db = require("../../mysql/db");
-const  authenticateJWT  = require("../Clients/index"); 
+const db = require("../../mysql/db"); 
 //recuperer tous les produits 
 router.get('/', (req, res) => {
     const query = `
@@ -150,54 +149,6 @@ router.post('/search-product', (req, res) => {
 
         res.json(results);
     });
-});
-
-// **************************** passer une Commande personnalisée ******************************
-router.post("/personalized-order", authenticateJWT, (req, res) => {
-  const { description, date, telephone } = req.body;
-  const userId = req.user.userId;  // Récupéré à partir du token JWT
-
-  // Vérifier que tous les champs sont remplis
-  if (!description || !date || !telephone) {
-      return res.status(400).json({ message: "Veuillez remplir tous les champs!" });
-  }
-
-  const sql = `
-      INSERT INTO uzr4ephf_arsam_personalized_orders (_arsam_user_id, description, date, telephone)
-      VALUES (?, ?, ?, ?)
-  `;
-
-  db.query(sql, [userId, description, date, telephone], (err, result) => {
-      if (err) {
-          console.error("Erreur de base de données:", err);
-          return res.status(500).json({ message: "Erreur lors de la création de la commande personnalisée." });
-      }
-      res.status(201).json({ message: "Commande personnalisée ajoutée avec succès", orderId: result.insertId });
-  });
-});
-/*************************************recuperer les commande personnalise passe par un client specifique ********** */
-router.get("/p-orders", authenticateJWT, (req, res) => {
-  const userId = req.user.userId;  // Récupéré à partir du token JWT
-
-  const sql = `
-      SELECT order_id, _arsam_user_id, description, date, telephone
-      FROM uzr4ephf_arsam_personalized_orders
-      WHERE _arsam_user_id = ?
-  `;
-
-  db.query(sql, [userId], (err, results) => {
-      if (err) {
-          console.error("Erreur de base de données:", err);
-          return res.status(500).json({ message: "Erreur lors de la récupération des commandes personnalisées." });
-      }
-      
-      // Si aucune commande n'est trouvée pour l'utilisateur
-      if (results.length === 0) {
-          return res.status(404).json({ message: "Aucune commande personnalisée trouvée." });
-      }
-
-      res.status(200).json({ personalizedOrders: results });
-  });
 });
 
 module.exports = router;
