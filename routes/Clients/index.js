@@ -359,5 +359,82 @@ router.get("/p-order", authenticateJWT, (req, res) => {
   });
 });
 
+/*************************************** Ajouter un produit aux favoris *******************************************************/
+router.post('/add-favoris', authenticateJWT, (req, res) => {
+  const userId = req.user.userId;  // Récupérer l'ID de l'utilisateur du token
+  const { productId } = req.body;  // Récupérer l'ID du produit depuis le corps de la requête
+
+  // Vérification que l'ID du produit existe
+  if (!productId) {
+    return res.status(400).json({ message: "ID du produit manquant." });
+  }
+
+  // Vérification si le produit est déjà ajouté aux favoris de l'utilisateur
+  const checkQuery = `
+    SELECT 1 FROM uzr4ephf_arsam_user_favoris
+    WHERE _arsam_user_id = ? AND product_id = ?
+  `;
+
+  db.query(checkQuery, [userId, productId], (err, results) => {
+    if (err) {
+      console.error("Erreur de base de données lors de la vérification des favoris:", err);
+      return res.status(500).json({ message: "Erreur lors de la vérification des favoris." });
+    }
+
+    if (results.length > 0) {
+      // Le produit est déjà dans les favoris
+      return res.status(400).json({ message: "Ce produit est déjà dans vos favoris." });
+    }
+
+    // Si le produit n'est pas encore dans les favoris, l'ajouter
+    const sql = `
+      INSERT INTO uzr4ephf_arsam_user_favoris (_arsam_user_id, product_id)
+      VALUES (?, ?)
+    `;
+
+    db.query(sql, [userId, productId], (err, results) => {
+      if (err) {
+        console.error("Erreur de base de données lors de l'ajout aux favoris:", err);
+        return res.status(500).json({ message: "Erreur lors de l'ajout aux favoris." });
+      }
+
+      // Répondre avec un message de succès
+      res.status(200).json({ message: "Produit ajouté aux favoris avec succès." });
+    });
+  });
+});
+
+/***************************************récupérer les produits favoris de l'utilisateur******************** */
+router.get('/favoris', authenticateJWT, (req, res) => {
+    const userId = req.user.userId;  // Récupérer l'ID de l'utilisateur du token
+
+    // Requête SQL pour récupérer uniquement les produits ajoutés aux favoris
+    const query = `
+        SELECT uzr4ephf_posts.ID as id, 
+               uzr4ephf_posts.post_title as name, 
+               uzr4ephf_postmeta.meta_value as price,
+               uzr4ephf_posts.guid as image
+        FROM uzr4ephf_posts
+        JOIN uzr4ephf_arsam_user_favoris ON uzr4ephf_arsam_user_favoris.product_id = uzr4ephf_posts.ID
+        LEFT JOIN uzr4ephf_postmeta ON uzr4ephf_posts.ID = uzr4ephf_postmeta.post_id AND uzr4ephf_postmeta.meta_key = "_price"
+        WHERE uzr4ephf_arsam_user_favoris._arsam_user_id = ?
+        AND uzr4ephf_posts.post_type = "product"
+        AND uzr4ephf_posts.post_status = "publish";
+    `;
+
+    db.query(query, [userId], (err, results) => {
+        if (err) {
+            console.error('Erreur lors de la récupération des produits favoris:', err);
+            return res.status(500).json({ error: 'Erreur serveur lors de la récupération des produits favoris' });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ message: 'Aucun produit favori trouvé.' });
+        }
+
+        res.json(results); // Retourner les produits favoris trouvés
+    });
+});
+
   module.exports = router;
   
