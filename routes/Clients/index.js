@@ -100,14 +100,14 @@ const authenticateJWT = (req, res, next) => {
         }
   
         // Générer un token JWT
-        const token = jwt.sign({ userId: user.arsam_user_id, email: user.email }, secretKey/*, { expiresIn: "1h" }*/);
+        const token = jwt.sign({ userId: user._arsam_user_id, email: user.email }, secretKey/*, { expiresIn: "1h" }*/);
   
         res.status(200).json({ message: "Login successful", token });
       });
     });
   });
 
-  /*************************changer mot de passe ******************/
+  /*************************changer mot de passe par utilisateur ******************/
   router.put('/change-password', authenticateJWT, (req, res) => {
     const { newPassword, confirmPassword } = req.body;
     const userId = req.user.userId;
@@ -127,7 +127,7 @@ const authenticateJWT = (req, res, next) => {
       if (err) return res.status(500).json({ message: "Error hashing new password" });
   
       // Mettre à jour le mot de passe dans la base de données
-      const sqlUpdate = "UPDATE uzr4ephf_arsam_user SET password = ? WHERE arsam_user_id = ?";
+      const sqlUpdate = "UPDATE uzr4ephf_arsam_user SET password = ? WHERE _arsam_user_id = ?";
       db.query(sqlUpdate, [newHashedPassword, userId], (err, result) => {
         if (err) {
           console.error("Database error:", err);
@@ -140,7 +140,7 @@ const authenticateJWT = (req, res, next) => {
     });
   });
 
-  /*******************************Ajouter adresse*********************************** */
+  /*******************************Ajouter adresse specifique par utilisateur*********************************** */
   router.post("/add-address", authenticateJWT, (req, res) => {
     const { numero_appartement, rue, ville, province, code_postal } = req.body;
     const userId = req.user.userId;
@@ -152,7 +152,7 @@ const authenticateJWT = (req, res, next) => {
     if (!postal.test(code_postal)) {
         return res.status(400).json({ message: "Le code postal doit être au format A1A 1A1" });
     }
-    const sql = "INSERT INTO uzr4ephf_arsam_user_adress (numero_appartement, rue, ville, province, code_postal, arsam_user_id) VALUES (?, ?, ?, ?, ?, ?)";
+    const sql = "INSERT INTO uzr4ephf_arsam_user_adress (numero_appartement, rue, ville, province, code_postal, _arsam_user_id) VALUES (?, ?, ?, ?, ?, ?)";
     db.query(sql, [numero_appartement, rue, ville, province, code_postal, userId], (err, result) => {
         if (err) {
             console.error("Database error:", err);
@@ -162,7 +162,7 @@ const authenticateJWT = (req, res, next) => {
     });
 });
 
-/*********************************Modifier adresse ********************************** */
+/*********************************Modifier adresse specifique par utilisateur ********************************** */
 router.put("/update-address/:id", authenticateJWT, (req, res) => {
     const { numero_appartement, rue, ville, province, code_postal } = req.body;
     const addressId = req.params.id;
@@ -188,7 +188,7 @@ router.put("/update-address/:id", authenticateJWT, (req, res) => {
     });
 });
 
-/************************************Supprimer adresse****************************** */
+/************************************Supprimer adresse specifique par utilisateur ****************************** */
 router.delete("/delete-address/:id", authenticateJWT, (req, res) => {
     const addressId = req.params.id;
     const sql = "DELETE FROM uzr4ephf_arsam_user_adress WHERE id = ?";
@@ -205,12 +205,11 @@ router.delete("/delete-address/:id", authenticateJWT, (req, res) => {
     });
 });
 
-/****************************************supprimer utilisateur********************************** */
-// Route pour supprimer un compte utilisateur
+/****************************************supprimer le compte dun utilisateur ********************************** */
 router.delete("/delete-user", authenticateJWT, (req, res) => {
     const userId = req.user.userId;  // ID de l'utilisateur récupéré du token
 
-    const sqlDeleteUser = "DELETE FROM uzr4ephf_arsam_user WHERE arsam_user_id = ?";
+    const sqlDeleteUser = "DELETE FROM uzr4ephf_arsam_user WHERE _arsam_user_id = ?";
 
     // Supprimer l'utilisateur (les adresses seront supprimées automatiquement grâce à la contrainte ON DELETE CASCADE)
     db.query(sqlDeleteUser, [userId], (err, result) => {
@@ -225,6 +224,91 @@ router.delete("/delete-user", authenticateJWT, (req, res) => {
             res.status(404).json({ message: "Utilisateur non trouvé." });
         }
     });
+});
+/*********************************Récupérer toutes les adresses d'un client**********************************/
+router.get("/address", authenticateJWT, (req, res) => {
+  const userId = req.user.userId;  // ID de l'utilisateur récupéré du token
+
+  const sql = `
+      SELECT id, numero_appartement, rue, ville, province, code_postal
+      FROM uzr4ephf_arsam_user_adress
+      WHERE _arsam_user_id = ?
+  `;
+
+  db.query(sql, [userId], (err, results) => {
+      if (err) {
+          console.error("Database error:", err);
+          return res.status(500).json({ message: "Erreur lors de la récupération des adresses." });
+      }
+      
+      // Si aucune adresse n'est trouvée pour l'utilisateur
+      if (results.length === 0) {
+          return res.status(404).json({ message: "Aucune adresse trouvée pour cet utilisateur." });
+      }
+      
+      res.status(200).json({ addresses: results });
+  });
+});
+/*******************************se deconnecter***************** */
+router.post("/logout", authenticateJWT, (req, res) => {
+  // Aucune action n'est nécessaire côté serveur pour le JWT, mais on informe le client.
+  res.status(200).json({ message: "Déconnecté avec succès" });
+});
+
+/************************* Mot de passe oublié ***************************/
+// Vérification de l'adresse e-mail pour la réinitialisation du mot de passe
+router.post("/forgot-password", (req, res) => {
+   const { email } = req.body;
+
+  const sqlCheckEmail = "SELECT _arsam_user_id FROM uzr4ephf_arsam_user WHERE email = ?";
+  db.query(sqlCheckEmail, [email], (err, results) => {
+      if (err) {
+          console.error("Erreur de base de données:", err);
+          return res.status(500).json({ message: "Erreur lors de la vérification de l'email." });
+      }
+
+      if (results.length === 0) {
+          return res.status(404).json({ message: "Email non trouvé." });
+      }
+
+      // On envoie l'ID utilisateur pour la suite du processus
+      res.status(200).json({ message: "Email vérifié avec succès.", userId: results[0]._arsam_user_id });
+  });
+});
+
+/************************************resert le mot de passe *************************************** */
+router.put("/reset-password", (req, res) => {
+  const { userId, newPassword, confirmPassword } = req.body;
+
+  // Vérification des champs
+  if (!newPassword || !confirmPassword) {
+      return res.status(400).json({ message: "Veuillez remplir tous les champs." });
+  }
+  if (newPassword !== confirmPassword) {
+      return res.status(400).json({ message: "Les mots de passe ne correspondent pas." });
+  }
+
+  // Hashage du nouveau mot de passe
+  bcrypt.hash(newPassword, 10, (err, hashedPassword) => {
+      if (err) {
+          console.error("Erreur lors du hachage du mot de passe:", err);
+          return res.status(500).json({ message: "Erreur serveur" });
+      }
+
+      // Mise à jour du mot de passe dans la base de données
+      const sqlUpdatePassword = "UPDATE uzr4ephf_arsam_user SET password = ? WHERE _arsam_user_id = ?";
+      db.query(sqlUpdatePassword, [hashedPassword, userId], (err, result) => {
+          if (err) {
+              console.error("Erreur de base de données:", err);
+              return res.status(500).json({ message: "Erreur lors de la réinitialisation du mot de passe" });
+          }
+          if (result.affectedRows > 0) {
+              res.status(200).json({ message: "Mot de passe réinitialisé avec succès." });
+          } else {
+              res.status(404).json({ message: "Utilisateur non trouvé." });
+          }
+      });
+  });
 });
 
   module.exports = router;
