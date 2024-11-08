@@ -204,7 +204,7 @@ router.post("/add-address", authenticateJWT, (req, res) => {
         return res.status(400).json({ message: "Le code postal doit être au format A1A 1A1" });
     }
 
-    const sql = "INSERT INTO uzr4ephf_arsam_user_adress (numero_appartement, rue, ville, province, code_postal, _arsam_user_id) VALUES (?, ?, ?, ?, ?, ?)";
+    const sql = "INSERT INTO uzr4ephf_arsam_user_adress (numero_appartement, rue, ville, province, code_postal, arsam_user_id) VALUES (?, ?, ?, ?, ?, ?)";
     
     db.query(sql, [numero_appartement, rue, ville, province, code_postal, userId], (err, result) => {
         if (err) {
@@ -235,7 +235,7 @@ router.put("/update-address/:id", authenticateJWT, (req, res) => {
         return res.status(400).json({ message: "Le code postal doit être au format A1A 1A1" });
     }
 
-    const sqlUpdate = "UPDATE uzr4ephf_arsam_user_adress SET numero_appartement = ?, rue = ?, ville = ?, province = ?, code_postal = ? WHERE id = ? AND _arsam_user_id = ?";
+    const sqlUpdate = "UPDATE uzr4ephf_arsam_user_adress SET numero_appartement = ?, rue = ?, ville = ?, province = ?, code_postal = ? WHERE id = ? AND arsam_user_id = ?";
     db.query(sqlUpdate, [numero_appartement, rue, ville, province, code_postal, addressId, req.user.userId], (err, result) => {
         if (err) {
             console.error("Database error:", err);
@@ -253,7 +253,7 @@ router.put("/update-address/:id", authenticateJWT, (req, res) => {
 // Delete Address Route
 router.delete("/delete-address/:id", authenticateJWT, (req, res) => {
     const addressId = req.params.id;
-    const sql = "DELETE FROM uzr4ephf_arsam_user_adress WHERE id = ? AND _arsam_user_id = ?";
+    const sql = "DELETE FROM uzr4ephf_arsam_user_adress WHERE id = ? AND arsam_user_id = ?";
     
     db.query(sql, [addressId, req.user.userId], (err, result) => {
         if (err) {
