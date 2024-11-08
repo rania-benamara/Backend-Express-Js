@@ -3,39 +3,45 @@ const router = express.Router();
 const db = require("../../mysql/db");
 const bcrypt = require("bcrypt");
 const jwt = require('jsonwebtoken');
-const secretKey = "cle"; 
+const secretKey = "cle";
 
-// Middleware pour vérifier le JWTe
+// Middleware pour vérifier le JWT
 const authenticateJWT = (req, res, next) => {
     const authHeader = req.header("Authorization");
+    console.log('Received auth header:', authHeader);
+
     if (authHeader) {
-      const token = authHeader.split(" ")[1];
-      if (token) {
-        jwt.verify(token, secretKey, (err, decoded) => {
-          if (err) {
-            return res.status(403).json({ message: "Forbidden" });
-          }
-          req.user = decoded;
-          next();
-        });
-      } else {
-        res.status(401).json({ message: "Unauthorized" });
-      }
+        const token = authHeader.split(" ")[1];
+        console.log('Extracted token:', token);
+
+        if (token) {
+            jwt.verify(token, secretKey, (err, decoded) => {
+                if (err) {
+                    console.error('Token verification error:', err);
+                    return res.status(403).json({ message: "Forbidden" });
+                }
+                console.log('Decoded token:', decoded);
+                req.user = decoded;
+                next();
+            });
+        } else {
+            console.log('No token in auth header');
+            res.status(401).json({ message: "Unauthorized" });
+        }
     } else {
-      res.status(401).json({ message: "Unauthorized" });
+        console.log('No auth header present');
+        res.status(401).json({ message: "Unauthorized" });
     }
-  };
-  /***********************************register************************************/
-  //verifier si un compte existe deja 
-  router.post("/register", (req, res) => {
-    const {prenom, nom, email, telephone, password ,date_naissance} = req.body;
-  
-    // Vérification des champs obligatoires
-    if ( !prenom || !nom || !email || !telephone|| !password|| !date_naissance) {
+};
+
+// Register Route
+router.post("/register", (req, res) => {
+    const { nom, prenom, telephone, email, password, date_naissance } = req.body;
+
+    if (!prenom || !nom || !telephone || !email || !password || !date_naissance) {
         return res.status(400).json({ message: "Veuillez remplir tous les champs!" });
     }
 
-    // Vérifier si l'email existe déjà dans la base de données
     const checkEmail = "SELECT * FROM uzr4ephf_arsam_user WHERE email = ?";
     db.query(checkEmail, [email], (err, results) => {
         if (err) {
@@ -43,17 +49,15 @@ const authenticateJWT = (req, res, next) => {
             return res.status(500).json({ message: "Error checking email" });
         }
 
-        // Si l'email existe déjà
         if (results.length > 0) {
             return res.status(400).json({ message: "L'email existe déjà, veuillez vous connecter." });
         }
 
-        // Hashage du mot de passe
         bcrypt.hash(password, 10, (err, hashedPassword) => {
             if (err) return res.status(500).json({ message: "Error hashing password" });
 
-            const sql = "INSERT INTO uzr4ephf_arsam_user (prenom, nom, email, telephone, password ,date_naissance) VALUES (?, ?, ?, ?, ?, ?)";
-            db.query(sql, [prenom, nom, email, telephone, hashedPassword ,date_naissance], (err, result) => {
+            const sql = "INSERT INTO uzr4ephf_arsam_user (nom, prenom, telephone, email, password, date_naissance) VALUES (?, ?, ?, ?, ?, ?)";
+            db.query(sql, [nom, prenom, telephone, email, hashedPassword, date_naissance], (err, result) => {
                 if (err) {
                     console.error("Database error:", err);
                     return res.status(500).json({ message: "Error registering user" });
@@ -67,84 +71,131 @@ const authenticateJWT = (req, res, next) => {
     });
 });
 
-  /****************************Fonction login*******************************/
-  router.post("/login", (req, res) => {
+// Login Route
+router.post("/login", (req, res) => {
     const { email, password } = req.body;
-  
+    console.log('Login attempt for:', email);
+
     if (!email || !password) {
-      return res.status(400).json({ message: "Veuillez remplir les deux champs " });
+        return res.status(400).json({ message: "Veuillez remplir les deux champs" });
     }
-  
+
     const sql = "SELECT * FROM uzr4ephf_arsam_user WHERE email = ?";
     db.query(sql, [email], (err, results) => {
-      if (err) {
-        console.error("Database error:", err);
-        return res.status(500).json({ message: "Database error" });
-      }
-  
-      if (results.length === 0) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-  
-      const user = results[0];
-  
-      // Comparer le mot de passe
-      bcrypt.compare(password, user.password, (err, isMatch) => {
         if (err) {
-          console.error("Error comparing passwords:", err);
-          return res.status(500).json({ message: "Error comparing passwords" });
+            console.error("Database error:", err);
+            return res.status(500).json({ message: "Database error" });
         }
-  
-        if (!isMatch) {
-          return res.status(401).json({ message: "Email ou mot de passe invalide" });
-        }
-  
-        // Générer un token JWT
-        const token = jwt.sign({ userId: user._arsam_user_id, email: user.email }, secretKey/*, { expiresIn: "1h" }*/);
-  
-        res.status(200).json({ message: "Login successful", token });
-      });
-    });
-  });
 
-  /*************************changer mot de passe par utilisateur ******************/
-  router.put('/change-password', authenticateJWT, (req, res) => {
-    const { newPassword, confirmPassword } = req.body;
+        if (results.length === 0) {
+            return res.status(401).json({ message: "Invalid credentials" });
+        }
+
+        const user = results[0];
+        bcrypt.compare(password, user.password, (err, isMatch) => {
+            if (err) {
+                console.error("Error comparing passwords:", err);
+                return res.status(500).json({ message: "Error comparing passwords" });
+            }
+
+            if (!isMatch) {
+                return res.status(401).json({ message: "Email ou mot de passe invalide" });
+            }
+
+            const tokenPayload = { 
+                userId: user._arsam_user_id,
+                email: user.email 
+            };
+            console.log('Token payload:', tokenPayload);
+
+            const token = jwt.sign(tokenPayload, secretKey);
+            console.log('Generated token:', token);
+
+            res.status(200).json({ 
+                message: "Login successful", 
+                token,
+                userId: user._arsam_user_id 
+            });
+        });
+    });
+});
+
+// Change Password Route
+router.put('/change-password', authenticateJWT, (req, res) => {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
     const userId = req.user.userId;
-  
-    // Vérification des champs obligatoires
-    if (!newPassword || !confirmPassword) {
-      return res.status(400).json({ message: "veuillez remplir tous les champs" });
-    }
-  
-    // Vérification que les nouveaux mots de passe correspondent
-    if (newPassword !== confirmPassword) {
-      return res.status(400).json({ message: "les mots de passe sont differents" });
-    }
-  
-    // Hasher le nouveau mot de passe
-    bcrypt.hash(newPassword, 10, (err, newHashedPassword) => {
-      if (err) return res.status(500).json({ message: "Error hashing new password" });
-  
-      // Mettre à jour le mot de passe dans la base de données
-      const sqlUpdate = "UPDATE uzr4ephf_arsam_user SET password = ? WHERE _arsam_user_id = ?";
-      db.query(sqlUpdate, [newHashedPassword, userId], (err, result) => {
-        if (err) {
-          console.error("Database error:", err);
-          return res.status(500).json({ message: "Erreur" });
-        }
-        if (result.affectedRows > 0) {
-          res.status(200).json({ message: "Mot de passe changer" });
-        }
-      });
-    });
-  });
 
-  /*******************************Ajouter adresse specifique par utilisateur*********************************** */
-  router.post("/add-address", authenticateJWT, (req, res) => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+        return res.status(400).json({ message: "Veuillez remplir tous les champs" });
+    }
+
+    if (newPassword !== confirmPassword) {
+        return res.status(400).json({ message: "Les nouveaux mots de passe sont différents" });
+    }
+
+    if (currentPassword === newPassword) {
+        return res.status(400).json({ message: "Le nouveau mot de passe doit être différent de l'ancien" });
+    }
+
+    const sqlSelect = "SELECT password FROM uzr4ephf_arsam_user WHERE _arsam_user_id = ?";
+    db.query(sqlSelect, [userId], (err, results) => {
+        if (err) {
+            console.error("Database error:", err);
+            return res.status(500).json({ message: "Erreur de base de données" });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ message: "Utilisateur non trouvé" });
+        }
+
+        const currentHashedPassword = results[0].password;
+
+        bcrypt.compare(currentPassword, currentHashedPassword, (err, isMatch) => {
+            if (err) {
+                console.error("Error comparing passwords:", err);
+                return res.status(500).json({ message: "Erreur lors de la vérification du mot de passe" });
+            }
+
+            if (!isMatch) {
+                return res.status(400).json({ message: "Le mot de passe actuel est incorrect" });
+            }
+
+            bcrypt.hash(newPassword, 10, (err, newHashedPassword) => {
+                if (err) {
+                    console.error("Error hashing password:", err);
+                    return res.status(500).json({ message: "Erreur lors du hashage du mot de passe" });
+                }
+
+                const sqlUpdate = "UPDATE uzr4ephf_arsam_user SET password = ? WHERE _arsam_user_id = ?";
+                db.query(sqlUpdate, [newHashedPassword, userId], (err, result) => {
+                    if (err) {
+                        console.error("Database error:", err);
+                        return res.status(500).json({ message: "Erreur lors de la mise à jour du mot de passe" });
+                    }
+
+                    if (result.affectedRows > 0) {
+                        res.status(200).json({ message: "Mot de passe modifié avec succès" });
+                    } else {
+                        res.status(404).json({ message: "Utilisateur non trouvé" });
+                    }
+                });
+            });
+        });
+    });
+});
+
+// Add Address Route
+router.post("/add-address", authenticateJWT, (req, res) => {
+    console.log('Add address request received');
+    console.log('User from token:', req.user);
+    console.log('Request body:', req.body);
+
     const { numero_appartement, rue, ville, province, code_postal } = req.body;
     const userId = req.user.userId;
-    const postal = /^[A-Za-z]\d[A-Za-z] \d[A-Za-z]\d$/; // format A1A 1A1
+    console.log('Using userId:', userId);
+
+    const postal = /^[A-Za-z]\d[A-Za-z] \d[A-Za-z]\d$/;
+
     if (!numero_appartement || !rue || !ville || !province || !code_postal) {
         return res.status(400).json({ message: "Veuillez remplir tous les champs!" });
     }
@@ -152,66 +203,77 @@ const authenticateJWT = (req, res, next) => {
     if (!postal.test(code_postal)) {
         return res.status(400).json({ message: "Le code postal doit être au format A1A 1A1" });
     }
+
     const sql = "INSERT INTO uzr4ephf_arsam_user_adress (numero_appartement, rue, ville, province, code_postal, _arsam_user_id) VALUES (?, ?, ?, ?, ?, ?)";
+    
     db.query(sql, [numero_appartement, rue, ville, province, code_postal, userId], (err, result) => {
         if (err) {
             console.error("Database error:", err);
             return res.status(500).json({ message: "Erreur lors de l'ajout de l'adresse" });
         }
-        res.status(201).json({ message: "Adresse ajoutée avec succès"});
+
+        console.log('Address added successfully. Result:', result);
+        res.status(201).json({ 
+            message: "Adresse ajoutée avec succès",
+            addressId: result.insertId,
+            userId: userId
+        });
     });
 });
 
-/*********************************Modifier adresse specifique par utilisateur ********************************** */
+// Update Address Route
 router.put("/update-address/:id", authenticateJWT, (req, res) => {
     const { numero_appartement, rue, ville, province, code_postal } = req.body;
     const addressId = req.params.id;
-    const postal = /^[A-Za-z]\d[A-Za-z] \d[A-Za-z]\d$/; 
-    // Vérification des champs obligatoires
+    const postal = /^[A-Za-z]\d[A-Za-z] \d[A-Za-z]\d$/;
+
     if (!numero_appartement || !rue || !ville || !province || !code_postal) {
         return res.status(400).json({ message: "Veuillez remplir tous les champs!" });
     }
+
     if (!postal.test(code_postal)) {
         return res.status(400).json({ message: "Le code postal doit être au format A1A 1A1" });
     }
 
-    // Mettre à jour l'adresse dans la base de données
-    const sqlUpdate = "UPDATE uzr4ephf_arsam_user_adress SET numero_appartement = ?, rue = ?, ville = ?, province = ?, code_postal = ? WHERE id = ?";
-    db.query(sqlUpdate, [numero_appartement, rue, ville, province, code_postal, addressId], (err, result) => {
+    const sqlUpdate = "UPDATE uzr4ephf_arsam_user_adress SET numero_appartement = ?, rue = ?, ville = ?, province = ?, code_postal = ? WHERE id = ? AND _arsam_user_id = ?";
+    db.query(sqlUpdate, [numero_appartement, rue, ville, province, code_postal, addressId, req.user.userId], (err, result) => {
         if (err) {
             console.error("Database error:", err);
             return res.status(500).json({ message: "Error updating address" });
         }
+
         if (result.affectedRows > 0) {
             res.status(200).json({ message: "Adresse mise à jour avec succès" });
+        } else {
+            res.status(404).json({ message: "Adresse non trouvée ou non autorisée" });
         }
     });
 });
 
-/************************************Supprimer adresse specifique par utilisateur ****************************** */
+// Delete Address Route
 router.delete("/delete-address/:id", authenticateJWT, (req, res) => {
     const addressId = req.params.id;
-    const sql = "DELETE FROM uzr4ephf_arsam_user_adress WHERE id = ?";
-    db.query(sql, [addressId], (err, result) => {
+    const sql = "DELETE FROM uzr4ephf_arsam_user_adress WHERE id = ? AND _arsam_user_id = ?";
+    
+    db.query(sql, [addressId, req.user.userId], (err, result) => {
         if (err) {
             console.error("Database error:", err);
             return res.status(500).json({ message: "Erreur lors de la suppression de l'adresse" });
         }
+
         if (result.affectedRows > 0) {
             res.status(200).json({ message: "Adresse supprimée avec succès" });
         } else {
-            res.status(404).json({ message: "Adresse non trouvée" });
+            res.status(404).json({ message: "Adresse non trouvée ou non autorisée" });
         }
     });
 });
 
-/****************************************supprimer le compte dun utilisateur ********************************** */
+// Delete User Account Route
 router.delete("/delete-user", authenticateJWT, (req, res) => {
-    const userId = req.user.userId;  // ID de l'utilisateur récupéré du token
-
+    const userId = req.user.userId;
     const sqlDeleteUser = "DELETE FROM uzr4ephf_arsam_user WHERE _arsam_user_id = ?";
 
-    // Supprimer l'utilisateur (les adresses seront supprimées automatiquement grâce à la contrainte ON DELETE CASCADE)
     db.query(sqlDeleteUser, [userId], (err, result) => {
         if (err) {
             console.error("Database error:", err);
@@ -225,201 +287,204 @@ router.delete("/delete-user", authenticateJWT, (req, res) => {
         }
     });
 });
-/*********************************Récupérer toutes les adresses d'un client**********************************/
+
+// Get User Addresses Route
 router.get("/address", authenticateJWT, (req, res) => {
-  const userId = req.user.userId;  // ID de l'utilisateur récupéré du token
+    const userId = req.user.userId;
 
-  const sql = `
-      SELECT id, numero_appartement, rue, ville, province, code_postal
-      FROM uzr4ephf_arsam_user_adress
-      WHERE _arsam_user_id = ?
-  `;
-
-  db.query(sql, [userId], (err, results) => {
-      if (err) {
-          console.error("Database error:", err);
-          return res.status(500).json({ message: "Erreur lors de la récupération des adresses." });
-      }
-      
-      // Si aucune adresse n'est trouvée pour l'utilisateur
-      if (results.length === 0) {
-          return res.status(404).json({ message: "Aucune adresse trouvée pour cet utilisateur." });
-      }
-      
-      res.status(200).json({ addresses: results });
-  });
-});
-/*******************************se deconnecter***************** */
-router.post("/logout", authenticateJWT, (req, res) => {
-  // Aucune action n'est nécessaire côté serveur pour le JWT, mais on informe le client.
-  res.status(200).json({ message: "Déconnecté avec succès" });
-});
-
-/************************* Mot de passe oublié ***************************/
-// Vérification de l'adresse e-mail pour la réinitialisation du mot de passe
-router.post("/forgot-password", (req, res) => {
-   const { email } = req.body;
-
-  const sqlCheckEmail = "SELECT _arsam_user_id FROM uzr4ephf_arsam_user WHERE email = ?";
-  db.query(sqlCheckEmail, [email], (err, results) => {
-      if (err) {
-          console.error("Erreur de base de données:", err);
-          return res.status(500).json({ message: "Erreur lors de la vérification de l'email." });
-      }
-
-      if (results.length === 0) {
-          return res.status(404).json({ message: "Email non trouvé." });
-      }
-
-      // On envoie l'ID utilisateur pour la suite du processus
-      res.status(200).json({ message: "Email vérifié avec succès.", userId: results[0]._arsam_user_id });
-  });
-});
-
-/************************************resert le mot de passe *************************************** */
-router.put("/reset-password", (req, res) => {
-  const { userId, newPassword, confirmPassword } = req.body;
-
-  // Vérification des champs
-  if (!newPassword || !confirmPassword) {
-      return res.status(400).json({ message: "Veuillez remplir tous les champs." });
-  }
-  if (newPassword !== confirmPassword) {
-      return res.status(400).json({ message: "Les mots de passe ne correspondent pas." });
-  }
-
-  // Hashage du nouveau mot de passe
-  bcrypt.hash(newPassword, 10, (err, hashedPassword) => {
-      if (err) {
-          console.error("Erreur lors du hachage du mot de passe:", err);
-          return res.status(500).json({ message: "Erreur serveur" });
-      }
-
-      // Mise à jour du mot de passe dans la base de données
-      const sqlUpdatePassword = "UPDATE uzr4ephf_arsam_user SET password = ? WHERE _arsam_user_id = ?";
-      db.query(sqlUpdatePassword, [hashedPassword, userId], (err, result) => {
-          if (err) {
-              console.error("Erreur de base de données:", err);
-              return res.status(500).json({ message: "Erreur lors de la réinitialisation du mot de passe" });
-          }
-          if (result.affectedRows > 0) {
-              res.status(200).json({ message: "Mot de passe réinitialisé avec succès." });
-          } else {
-              res.status(404).json({ message: "Utilisateur non trouvé." });
-          }
-      });
-  });
-});
-
-// **************************** passer une Commande personnalisée ******************************
-router.post("/personalized-order", authenticateJWT, (req, res) => {
-  const { description, date, telephone } = req.body;
-  const userId = req.user.userId;  // Récupéré à partir du token JWT
-
-  // Vérifier que tous les champs sont remplis
-  if (!description || !date || !telephone) {
-      return res.status(400).json({ message: "Veuillez remplir tous les champs!" });
-  }
-
-  const sql = `
-      INSERT INTO uzr4ephf_arsam_personalized_orders (_arsam_user_id, description, date, telephone)
-      VALUES (?, ?, ?, ?)
-  `;
-
-  db.query(sql, [userId, description, date, telephone], (err, result) => {
-      if (err) {
-          console.error("Erreur de base de données:", err);
-          return res.status(500).json({ message: "Erreur lors de la création de la commande personnalisée." });
-      }
-      res.status(201).json({ message: "Commande personnalisée ajoutée avec succès", orderId: result.insertId });
-  });
-});
-/*************************************recuperer les commande personnalise passe par un client specifique ********** */
-router.get("/p-order", authenticateJWT, (req, res) => {
-  const userId = req.user.userId;  // Récupéré à partir du token JWT
-
-  const sql = `
-      SELECT order_id, _arsam_user_id, description, date, telephone
-      FROM uzr4ephf_arsam_personalized_orders
-      WHERE _arsam_user_id = ?
-  `;
-
-  db.query(sql, [userId], (err, results) => {
-      if (err) {
-          console.error("Erreur de base de données:", err);
-          return res.status(500).json({ message: "Erreur lors de la récupération des commandes personnalisées." });
-      }
-      
-      // Si aucune commande n'est trouvée pour l'utilisateur
-      if (results.length === 0) {
-          return res.status(404).json({ message: "Aucune commande personnalisée trouvée." });
-      }
-
-      res.status(200).json({ personalizedOrders: results });
-  });
-});
-
-/*************************************** Ajouter un produit aux favoris *******************************************************/
-router.post('/add-favoris', authenticateJWT, (req, res) => {
-  const userId = req.user.userId;  // Récupérer l'ID de l'utilisateur du token
-  const { productId } = req.body;  // Récupérer l'ID du produit depuis le corps de la requête
-
-  // Vérification que l'ID du produit existe
-  if (!productId) {
-    return res.status(400).json({ message: "ID du produit manquant." });
-  }
-
-  // Vérification si le produit est déjà ajouté aux favoris de l'utilisateur
-  const checkQuery = `
-    SELECT 1 FROM uzr4ephf_arsam_user_favoris
-    WHERE _arsam_user_id = ? AND product_id = ?
-  `;
-
-  db.query(checkQuery, [userId, productId], (err, results) => {
-    if (err) {
-      console.error("Erreur de base de données lors de la vérification des favoris:", err);
-      return res.status(500).json({ message: "Erreur lors de la vérification des favoris." });
-    }
-
-    if (results.length > 0) {
-      // Le produit est déjà dans les favoris
-      return res.status(400).json({ message: "Ce produit est déjà dans vos favoris." });
-    }
-
-    // Si le produit n'est pas encore dans les favoris, l'ajouter
     const sql = `
-      INSERT INTO uzr4ephf_arsam_user_favoris (_arsam_user_id, product_id)
-      VALUES (?, ?)
+        SELECT id, numero_appartement, rue, ville, province, code_postal
+        FROM uzr4ephf_arsam_user_adress
+        WHERE _arsam_user_id = ?
     `;
 
-    db.query(sql, [userId, productId], (err, results) => {
-      if (err) {
-        console.error("Erreur de base de données lors de l'ajout aux favoris:", err);
-        return res.status(500).json({ message: "Erreur lors de l'ajout aux favoris." });
-      }
+    db.query(sql, [userId], (err, results) => {
+        if (err) {
+            console.error("Database error:", err);
+            return res.status(500).json({ message: "Erreur lors de la récupération des adresses." });
+        }
 
-      // Répondre avec un message de succès
-      res.status(200).json({ message: "Produit ajouté aux favoris avec succès." });
+        if (results.length === 0) {
+            return res.status(404).json({ message: "Aucune adresse trouvée pour cet utilisateur." });
+        }
+
+        res.status(200).json({ addresses: results });
     });
-  });
 });
 
-/***************************************récupérer les produits favoris de l'utilisateur******************** */
-router.get('/favoris', authenticateJWT, (req, res) => {
-    const userId = req.user.userId;  // Récupérer l'ID de l'utilisateur du token
+// Logout Route
+router.post("/logout", authenticateJWT, (req, res) => {
+    res.status(200).json({ message: "Déconnecté avec succès" });
+});
 
-    // Requête SQL pour récupérer uniquement les produits ajoutés aux favoris
+// Forgot Password Route
+router.post("/forgot-password", (req, res) => {
+    const { email } = req.body;
+    const sqlCheckEmail = "SELECT _arsam_user_id FROM uzr4ephf_arsam_user WHERE email = ?";
+
+    db.query(sqlCheckEmail, [email], (err, results) => {
+        if (err) {
+            console.error("Erreur de base de données:", err);
+            return res.status(500).json({ message: "Erreur lors de la vérification de l'email." });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ message: "Email non trouvé." });
+        }
+
+        res.status(200).json({ 
+            message: "Email vérifié avec succès.", 
+            userId: results[0]._arsam_user_id 
+        });
+    });
+});
+
+// Reset Password Route
+router.put("/reset-password", (req, res) => {
+    const { userId, newPassword, confirmPassword } = req.body;
+
+    if (!newPassword || !confirmPassword) {
+        return res.status(400).json({ message: "Veuillez remplir tous les champs." });
+    }
+
+    if (newPassword !== confirmPassword) {
+        return res.status(400).json({ message: "Les mots de passe ne correspondent pas." });
+    }
+
+    bcrypt.hash(newPassword, 10, (err, hashedPassword) => {
+        if (err) {
+            console.error("Erreur lors du hachage du mot de passe:", err);
+            return res.status(500).json({ message: "Erreur serveur" });
+        }
+
+        const sqlUpdatePassword = "UPDATE uzr4ephf_arsam_user SET password = ? WHERE _arsam_user_id = ?";
+        db.query(sqlUpdatePassword, [hashedPassword, userId], (err, result) => {
+            if (err) {
+                console.error("Erreur de base de données:", err);
+                return res.status(500).json({ message: "Erreur lors de la réinitialisation du mot de passe" });
+            }
+
+            if (result.affectedRows > 0) {
+                res.status(200).json({ message: "Mot de passe réinitialisé avec succès." });
+            } else {
+                res.status(404).json({ message: "Utilisateur non trouvé." });
+            }
+        });
+    });
+});
+
+// Add Personalized Order Route
+router.post("/personalized-order", authenticateJWT, (req, res) => {
+    const { description, date, telephone } = req.body;
+    const userId = req.user.userId;
+
+    if (!description || !date || !telephone) {
+        return res.status(400).json({ message: "Veuillez remplir tous les champs!" });
+    }
+
+    const sql = `
+        INSERT INTO uzr4ephf_arsam_personalized_orders 
+        (_arsam_user_id, description, date, telephone)
+        VALUES (?, ?, ?, ?)
+    `;
+
+    db.query(sql, [userId, description, date, telephone], (err, result) => {
+        if (err) {
+            console.error("Erreur de base de données:", err);
+            return res.status(500).json({ message: "Erreur lors de la création de la commande personnalisée." });
+        }
+
+        res.status(201).json({ 
+            message: "Commande personnalisée ajoutée avec succès", 
+            orderId: result.insertId 
+        });
+    });
+});
+
+// Get Personalized Orders Route
+router.get("/p-order", authenticateJWT, (req, res) => {
+    const userId = req.user.userId;
+
+    const sql = `
+        SELECT order_id, _arsam_user_id, description, date, telephone
+        FROM uzr4ephf_arsam_personalized_orders
+        WHERE _arsam_user_id = ?
+    `;
+
+    db.query(sql, [userId], (err, results) => {
+        if (err) {
+            console.error("Erreur de base de données:", err);
+            return res.status(500).json({ message: "Erreur lors de la récupération des commandes personnalisées." });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ message: "Aucune commande personnalisée trouvée." });
+        }
+
+        res.status(200).json({ personalizedOrders: results });
+    });
+});
+
+// Add to Favorites Route
+router.post('/add-favoris', authenticateJWT, (req, res) => {
+    const userId = req.user.userId;
+    const { productId } = req.body;
+
+    if (!productId) {
+        return res.status(400).json({ message: "ID du produit manquant." });
+    }
+
+    const checkQuery = `
+        SELECT 1 FROM uzr4ephf_arsam_user_favoris
+        WHERE _arsam_user_id = ? AND product_id = ?
+    `;
+
+    db.query(checkQuery, [userId, productId], (err, results) => {
+        if (err) {
+            console.error("Erreur de base de données lors de la vérification des favoris:", err);
+            return res.status(500).json({ message: "Erreur lors de la vérification des favoris." });
+        }
+
+        if (results.length > 0) {
+            return res.status(400).json({ message: "Ce produit est déjà dans vos favoris." });
+        }
+
+        const sql = `
+            INSERT INTO uzr4ephf_arsam_user_favoris 
+            (_arsam_user_id, product_id)
+            VALUES (?, ?)
+        `;
+
+        db.query(sql, [userId, productId], (err, results) => {
+            if (err) {
+                console.error("Erreur de base de données lors de l'ajout aux favoris:", err);
+                return res.status(500).json({ message: "Erreur lors de l'ajout aux favoris." });
+            }
+
+            res.status(200).json({ message: "Produit ajouté aux favoris avec succès." });
+        });
+    });
+});
+
+// Get Favorites Route
+router.get('/favoris', authenticateJWT, (req, res) => {
+    const userId = req.user.userId;
+
     const query = `
-        SELECT uzr4ephf_posts.ID as id, 
-               uzr4ephf_posts.post_title as name, 
-               uzr4ephf_postmeta.meta_value as price,
-               uzr4ephf_posts.guid as image
+        SELECT 
+            uzr4ephf_posts.ID as id, 
+            uzr4ephf_posts.post_title as name, 
+            uzr4ephf_postmeta.meta_value as price,
+            uzr4ephf_posts.guid as image
         FROM uzr4ephf_posts
-        JOIN uzr4ephf_arsam_user_favoris ON uzr4ephf_arsam_user_favoris.product_id = uzr4ephf_posts.ID
-        LEFT JOIN uzr4ephf_postmeta ON uzr4ephf_posts.ID = uzr4ephf_postmeta.post_id AND uzr4ephf_postmeta.meta_key = "_price"
+        JOIN uzr4ephf_arsam_user_favoris 
+            ON uzr4ephf_arsam_user_favoris.product_id = uzr4ephf_posts.ID
+        LEFT JOIN uzr4ephf_postmeta 
+            ON uzr4ephf_posts.ID = uzr4ephf_postmeta.post_id 
+            AND uzr4ephf_postmeta.meta_key = "_price"
         WHERE uzr4ephf_arsam_user_favoris._arsam_user_id = ?
         AND uzr4ephf_posts.post_type = "product"
-        AND uzr4ephf_posts.post_status = "publish";
+        AND uzr4ephf_posts.post_status = "publish"
     `;
 
     db.query(query, [userId], (err, results) => {
@@ -432,9 +497,8 @@ router.get('/favoris', authenticateJWT, (req, res) => {
             return res.status(404).json({ message: 'Aucun produit favori trouvé.' });
         }
 
-        res.json(results); // Retourner les produits favoris trouvés
+        res.json(results);
     });
 });
 
-  module.exports = router;
-  
+module.exports = router;
