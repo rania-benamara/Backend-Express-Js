@@ -322,7 +322,7 @@ router.post("/verify-code", (req, res) => {
 
 
 /************************************************** réinitialisation du mot de passe *************************************************************** */
-router.post("/reset-password", authenticateJWT, (req, res) => {
+router.post("/reset-password", authenticateJWT , (req, res) => {
   const { newPassword, confirmPassword } = req.body;
 
   // Récupérer l'ID utilisateur depuis l'objet `req` (déjà défini par le middleware)
