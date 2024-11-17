@@ -5,6 +5,7 @@ const bcrypt = require("bcrypt");
 const jwt = require('jsonwebtoken');
 const secretKey = "cle"; 
 const sendEmail = require("./SendEmail");
+const globalState = { userId: null };
 
 // Middleware pour vérifier le JWTe
 const authenticateJWT = (req, res, next) => {
@@ -256,97 +257,101 @@ router.post("/logout", authenticateJWT, (req, res) => {
   res.status(200).json({ message: "Déconnecté avec succès" });
 });
 
-/**************************************mot de pasee oublie avec envoie du code a 6 chiffre********************************************************* */
+/************************************************** Mot de passe oublié - Envoi du code**************************************************/
 router.post("/forgot-password", (req, res) => {
   const { email } = req.body;
 
   const sqlCheckEmail = "SELECT _arsam_user_id FROM uzr4ephf_arsam_user WHERE email = ?";
   db.query(sqlCheckEmail, [email], (err, results) => {
-     if (err) {
-         console.error("Erreur de base de données:", err);
-         return res.status(500).json({ message: "Erreur lors de la vérification de l'email." });
-     }
+    if (err) {
+      console.error("Erreur de base de données:", err);
+      return res.status(500).json({ message: "Erreur lors de la vérification de l'email." });
+    }
 
-     if (results.length === 0) {
-         return res.status(404).json({ message: "Email non trouvé." });
-     }
+    if (results.length === 0) {
+      return res.status(404).json({ message: "Email non trouvé." });
+    }
 
-     const userId = results[0]._arsam_user_id;
+    // Stocker l'ID utilisateur
+    globalState.userId = results[0]._arsam_user_id;
 
-     // Générez un code de vérification à 6 chiffres
-     const verificationCode = Math.floor(100000 + Math.random() * 900000);
-     const expirationTime = new Date(Date.now() + 60 * 60 * 1000); // Expire dans 10 minutes
+    const verificationCode = Math.floor(100000 + Math.random() * 900000);
+    const expirationTime = new Date(Date.now() + 10 * 60 * 1000);
 
-     // Insérez le code dans la table de vérification
-     const sqlInsertCode = "INSERT INTO uzr4ephf_arsam_verification_codes (_arsam_user_id, verification_code, expiration_time) VALUES (?, ?, ?)";
-     db.query(sqlInsertCode, [userId, verificationCode, expirationTime], async (err) => {
-         if (err) {
-             console.error("Erreur lors de la génération du code :", err);
-             return res.status(500).json({ message: "Erreur lors de la génération du code de vérification." });
-         }
-
-         // Envoi de l'e-mail de vérification
-         try {
-             await sendEmail(email, "Code de vérification", `Votre code de vérification est : ${verificationCode}`);
-             res.status(200).json({ message: "Code de vérification envoyé par e-mail." });
-         } catch (emailError) {
-             console.error("Erreur lors de l'envoi de l'e-mail :", emailError);
-             res.status(500).json({ message: "Erreur lors de l'envoi de l'e-mail de vérification." });
-         }
-     });
-  });
-});
-
-/**************************************************verification du code *************************************************************** */
-router.post("/verify-code", (req, res) => {
-  const { verificationCode } = req.body;  // On ne récupère que le code
-
-  // Recherche du code dans la base de données
-  const sqlVerifyCode = "SELECT _arsam_user_id, expiration_time FROM uzr4ephf_arsam_verification_codes WHERE verification_code = ? AND expiration_time > CURRENT_TIMESTAMP";
-
-  db.query(sqlVerifyCode, [verificationCode], (err, codeResults) => {
-      if (err || codeResults.length === 0) {
-          console.error("Erreur de base de données :", err);
-          return res.status(400).json({ message: "Code de vérification invalide ou expiré." });
+    const sqlInsertCode = `
+      INSERT INTO uzr4ephf_arsam_verification_codes (_arsam_user_id, verification_code, expiration_time) 
+      VALUES (?, ?, ?)
+    `;
+    db.query(sqlInsertCode, [globalState.userId, verificationCode, expirationTime], async (err) => {
+      if (err) {
+        console.error("Erreur lors de la génération du code :", err);
+        return res.status(500).json({ message: "Erreur lors de la génération du code." });
       }
 
-      // Si le code est valide, renvoyer un message de succès
-      const userId = codeResults[0]._arsam_user_id;
-        // Créer un token JWT avec l'ID de l'utilisateur
-        const token = jwt.sign({ userId }, secretKey, { expiresIn: "1h" });
-
-    // Réponse avec le token
-    res.status(200).json({message: "Code de vérification validé avec succès.",token});
+      try {
+        await sendEmail(email, "Code de vérification", `Votre code est : ${verificationCode}`);
+        res.status(200).json({ message: "Code envoyé par e-mail." });
+      } catch (emailError) {
+        console.error("Erreur d'envoi de l'email :", emailError);
+        res.status(500).json({ message: "Erreur lors de l'envoi de l'e-mail." });
+      }
+    });
   });
 });
 
+/**************************************************Vérification du code **************************************************/
+router.post("/verify-code", (req, res) => {
+  const { verificationCode } = req.body;
 
-/************************************************** réinitialisation du mot de passe *************************************************************** */
-router.post("/reset-password", authenticateJWT , (req, res) => {
+  const sqlVerifyCode = `
+    SELECT _arsam_user_id, expiration_time 
+    FROM uzr4ephf_arsam_verification_codes 
+    WHERE verification_code = ? AND expiration_time > CURRENT_TIMESTAMP
+  `;
+  db.query(sqlVerifyCode, [verificationCode], (err, codeResults) => {
+    if (err || codeResults.length === 0) {
+      console.error("Erreur de vérification :", err);
+      return res.status(400).json({ message: "Code invalide ou expiré." });
+    }
+
+    const userId = codeResults[0]._arsam_user_id;
+    if (userId !== globalState.userId) {
+      return res.status(403).json({ message: "Utilisateur non valide." });
+    }
+
+    res.status(200).json({ message: "Code validé." });
+  });
+});
+
+/**************************************************Réinitialisation du mot de passe**************************************************/
+router.post("/reset-password", (req, res) => {
   const { newPassword, confirmPassword } = req.body;
 
-  // Récupérer l'ID utilisateur depuis l'objet `req` (déjà défini par le middleware)
-  const userId = req.user.userId;
+  if (!globalState.userId) {
+    return res.status(403).json({ message: "Processus expiré. Veuillez recommencer." });
+  }
 
-  // Vérification des mots de passe
   if (newPassword !== confirmPassword) {
     return res.status(400).json({ message: "Les mots de passe ne correspondent pas." });
   }
 
-  // Hash du mot de passe
   const hashedPassword = bcrypt.hashSync(newPassword, 10);
-
-  // Mettre à jour le mot de passe dans la base de données
-  const sqlUpdatePassword = "UPDATE uzr4ephf_arsam_user SET password = ? WHERE _arsam_user_id = ?";
-  db.query(sqlUpdatePassword, [hashedPassword, userId], (err) => {
+  const sqlUpdatePassword = `
+    UPDATE uzr4ephf_arsam_user 
+    SET password = ? 
+    WHERE _arsam_user_id = ?
+  `;
+  db.query(sqlUpdatePassword, [hashedPassword, globalState.userId], (err) => {
     if (err) {
-      console.error("Erreur lors de la mise à jour du mot de passe :", err);
-      return res.status(500).json({ message: "Erreur lors de la mise à jour du mot de passe." });
+      console.error("Erreur de mise à jour :", err);
+      return res.status(500).json({ message: "Erreur de mise à jour du mot de passe." });
     }
 
-    res.status(200).json({ message: "Mot de passe réinitialisé avec succès." });
+    globalState.userId = null; // Réinitialiser après succès
+    res.status(200).json({ message: "Mot de passe mis à jour." });
   });
 });
+
 
 
 // **************************** passer une Commande personnalisée ******************************
