@@ -351,6 +351,93 @@ router.post("/reset-password", (req, res) => {
     res.status(200).json({ message: "Mot de passe mis à jour." });
   });
 });
+// route pour recuperer le produit et lajouter dans la table panier
+router.post("/ajouter-au-panier", authenticateJWT, (req, res) => {
+  const { product_id } = req.body;
+  const userId = req.user.userId;  // Récupère l'ID de l'utilisateur à partir du token JWT
+
+  if (!product_id) {
+      return res.status(400).json({ message: "Le product_id est requis !" });
+  }
+
+  // Définir une quantité par défaut de 1 si non spécifiée
+  const quantity = 1;
+
+  // Requête SQL pour insérer le produit dans le panier
+  const sql = `
+      INSERT INTO uzr4ephf_panier (user_id, product_id, quantity)
+      VALUES (?, ?, ?)
+  `;
+
+  db.query(sql, [userId, product_id, quantity], (err, result) => {
+      if (err) {
+          console.error("Erreur lors de l'ajout au panier:", err);
+          return res.status(500).json({ message: "Erreur interne du serveur." });
+      }
+
+      res.status(201).json({ message: "Produit ajouté au panier avec succès." });
+  });
+});
+
+/**********************************route pour recuperer les produit dans la table panier eyt les afficher dans la page panier*/
+
+router.get("/panier", authenticateJWT, (req, res) => {
+  const userId = req.user.userId;  // Récupère l'ID de l'utilisateur à partir du token JWT
+
+  // Requête SQL pour récupérer les produits du panier avec détails complets
+  const sql = `
+      SELECT
+          p.ID as id,
+          p.post_title as name,
+          pm_price.meta_value as price,
+          (SELECT pm2.meta_value
+              FROM uzr4ephf_postmeta pm2
+              WHERE pm2.post_id = p.ID
+              AND pm2.meta_key = '_thumbnail_id') as thumbnail_id,
+          (SELECT p2.guid
+              FROM uzr4ephf_posts p2
+              WHERE p2.ID = (
+                  SELECT pm3.meta_value
+                  FROM uzr4ephf_postmeta pm3
+                  WHERE pm3.post_id = p.ID
+                  AND pm3.meta_key = '_thumbnail_id'
+              )
+          ) as image_url,
+          GROUP_CONCAT(DISTINCT terms.name) as categories,
+          p.post_content as description,
+          pc.quantity
+      FROM uzr4ephf_panier pc
+      JOIN uzr4ephf_posts p ON pc.product_id = p.ID
+      LEFT JOIN uzr4ephf_postmeta pm_price
+          ON p.ID = pm_price.post_id
+          AND pm_price.meta_key = '_price'
+      LEFT JOIN uzr4ephf_term_relationships tr
+          ON p.ID = tr.object_id
+      LEFT JOIN uzr4ephf_term_taxonomy tt
+          ON tr.term_taxonomy_id = tt.term_taxonomy_id
+      LEFT JOIN uzr4ephf_terms terms
+          ON tt.term_id = terms.term_id
+      WHERE pc.user_id = ?
+      AND p.post_type = 'product'
+      AND p.post_status = 'publish'
+      GROUP BY p.ID;
+  `;
+
+  db.query(sql, [userId], (err, results) => {
+      if (err) {
+          console.error("Erreur lors de la récupération des produits du panier:", err);
+          return res.status(500).json({ message: "Erreur interne du serveur." });
+      }
+
+      // Si aucun produit trouvé
+      if (results.length === 0) {
+          return res.status(404).json({ message: "Aucun produit trouvé dans le panier." });
+      }
+
+      // Retourne les produits dans le panier avec tous les détails
+      res.status(200).json(results);
+  });
+});
 
 
 
