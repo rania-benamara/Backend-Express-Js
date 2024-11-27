@@ -4,7 +4,7 @@ const db = require("../../mysql/db");
 const bcrypt = require("bcrypt");
 const jwt = require('jsonwebtoken');
 const secretKey = "cle"; 
-const sendEmail = require("./SendEmail");
+const sendgridEmail = require("./SendEmail");
 const globalState = { userId: null };
 
 // Middleware pour vérifier le JWTe
@@ -258,9 +258,10 @@ router.post("/logout", authenticateJWT, (req, res) => {
 });
 
 /************************************************** Mot de passe oublié - Envoi du code**************************************************/
-router.post("/forgot-password", (req, res) => {
+router.post("/forgot-password", async (req, res) => {
   const { email } = req.body;
 
+  // Vérification si l'email existe dans la base
   const sqlCheckEmail = "SELECT _arsam_user_id FROM uzr4ephf_arsam_user WHERE email = ?";
   db.query(sqlCheckEmail, [email], (err, results) => {
     if (err) {
@@ -272,32 +273,37 @@ router.post("/forgot-password", (req, res) => {
       return res.status(404).json({ message: "Email non trouvé." });
     }
 
-    // Stocker l'ID utilisateur
-    globalState.userId = results[0]._arsam_user_id;
+    const userId = results[0]._arsam_user_id;
+    globalState.userId=userId;
+    const verificationCode = Math.floor(100000 + Math.random() * 900000); // Code à 6 chiffres
+    const expirationTime = new Date(Date.now() + 10 * 60 * 1000); // Expire après 10 minutes
 
-    const verificationCode = Math.floor(100000 + Math.random() * 900000);
-    const expirationTime = new Date(Date.now() + 10 * 60 * 1000);
-
+    // Insertion du code de vérification dans la base
     const sqlInsertCode = `
       INSERT INTO uzr4ephf_arsam_verification_codes (_arsam_user_id, verification_code, expiration_time) 
       VALUES (?, ?, ?)
     `;
-    db.query(sqlInsertCode, [globalState.userId, verificationCode, expirationTime], async (err) => {
+    db.query(sqlInsertCode, [userId, verificationCode, expirationTime], async (err) => {
       if (err) {
         console.error("Erreur lors de la génération du code :", err);
         return res.status(500).json({ message: "Erreur lors de la génération du code." });
       }
 
+      // Envoi du code par email
       try {
-        await sendEmail(email, "Code de vérification", `Votre code est : ${verificationCode}`);
+        const emailSubject = "Code de vérification";
+        const emailText = `Votre code de vérification est : ${verificationCode}`;
+        await sendgridEmail(email, emailSubject, emailText);
+
         res.status(200).json({ message: "Code envoyé par e-mail." });
       } catch (emailError) {
-        console.error("Erreur d'envoi de l'email :", emailError);
+        console.error("Erreur lors de l'envoi de l'e-mail :", emailError);
         res.status(500).json({ message: "Erreur lors de l'envoi de l'e-mail." });
       }
     });
   });
 });
+
 
 /**************************************************Vérification du code **************************************************/
 router.post("/verify-code", (req, res) => {
